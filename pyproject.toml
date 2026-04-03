@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "tplinkrouterc6u",
     "pycryptodome",
+    "mcp",
 ]
 
 [project.urls]
@@ -30,3 +31,4 @@ Homepage = "https://github.com/loliver1823/tplink-archer-be400-cli"
 
 [project.scripts]
 tplink-be400 = "tplink_be400.cli:main"
+tplink-be400-mcp = "tplink_be400.mcp_server:main"
