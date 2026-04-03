@@ -57,6 +57,8 @@ Commands:
   dump                    Dump every readable setting to JSON file
   monitor                 Continuous network health monitoring
 
+  discover                Scan LAN for TP-Link routers (see --subnet, --match-model)
+
 Examples:
   tplink-be400 r1 status
   tplink-be400 r1 firewall
@@ -64,6 +66,7 @@ Examples:
   tplink-be400 r1 write nat/dmz enable=on ipaddr=192.168.0.100
   tplink-be400 --host 192.168.0.1 --password secret status
   tplink-be400 r1 monitor
+  tplink-be400 discover --match-model BE400
 
 Config: {CONFIG_FILE}
 """
@@ -79,6 +82,9 @@ def main():
     parser.add_argument("--host", default=None)
     parser.add_argument("--password", default=None)
     parser.add_argument("--setup", action="store_true")
+    parser.add_argument("--subnet", default=None, help="CIDR for discover (default: auto /24)")
+    parser.add_argument("--match-model", default=None, dest="match_model", help="Filter discover by model substring")
+    parser.add_argument("--no-auth-discovery", action="store_true", help="Fingerprint only; do not log in per host")
     parser.add_argument("positional", nargs="*")
     parsed = parser.parse_args()
 
@@ -86,6 +92,16 @@ def main():
         path = create_default_config()
         print(f"  Config created at: {path}")
         print(f"  Edit it to add your router IP and password.")
+        return
+
+    if parsed.positional and parsed.positional[0] == "discover":
+        password_cfg, _ = load_config()
+        commands.cmd_discover(
+            subnet=parsed.subnet,
+            password=password_cfg,
+            match_model=parsed.match_model,
+            no_auth=parsed.no_auth_discovery,
+        )
         return
 
     password_cfg, routers = load_config()

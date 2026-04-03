@@ -5,7 +5,42 @@ import datetime
 import subprocess
 
 from .endpoints import ENDPOINTS
-from .connection import safe_request, fmt, print_table
+from .connection import safe_request, raw_request, fmt, print_table
+
+
+def cmd_discover(subnet, password, match_model, no_auth):
+    """Scan LAN for TP-Link admin pages; optionally identify models via API."""
+    from .discovery import discover_tplink_routers
+
+    try_auth = not no_auth
+    if try_auth and not password:
+        print("  Warning: no password in config — use fingerprint-only or set [auth].password")
+        try_auth = False
+
+    result = discover_tplink_routers(
+        subnet=subnet,
+        password=password if try_auth else None,
+        match_model_substring=match_model,
+        try_auth=try_auth,
+    )
+
+    print(f"\n  Subnets scanned: {', '.join(result['subnets_scanned'])}")
+    print(f"  Hosts probed:    {result['hosts_probed']}")
+    print(f"  Found:           {result['summary']['count']} TP-Link admin UI(s)")
+    if result["summary"].get("auth_failed"):
+        print(f"  Auth failures:   {result['summary']['auth_failed']}")
+
+    for i, item in enumerate(result["found"], 1):
+        print(f"\n  [{i}] {item.get('url', item.get('ip'))}")
+        if item.get("model"):
+            print(f"      Model:     {item.get('model')}")
+            print(f"      Hardware:  {item.get('hardware_version', '?')}")
+            print(f"      Firmware:  {item.get('firmware_version', '?')}")
+        elif item.get("auth_error"):
+            print(f"      Auth:      {item['auth_error'][:120]}")
+        else:
+            print("      (fingerprint only - set password and omit --no-auth-discovery for model)")
+    print()
 
 
 def cmd_status(r, label):
@@ -501,7 +536,7 @@ def cmd_logs(r, label, log_type="ALL"):
     if log_type != "ALL":
         safe_request(r, "admin/syslog?form=filter", "read")
         try:
-            r.request("admin/syslog?form=filter", f"operation=write&type={log_type}&level=ALL")
+            raw_request(r, "admin/syslog?form=filter", f"operation=write&type={log_type}&level=ALL")
         except Exception as e:
             print(f"  Warning: could not set log filter: {e}")
     logs = safe_request(r, "admin/syslog?form=log", "load")
@@ -516,7 +551,7 @@ def cmd_logs(r, label, log_type="ALL"):
                 print(f"  [{entry.get('time', '')}] [{entry.get('type', '')}] [{entry.get('level', '')}] {entry.get('content', '')}")
     if log_type != "ALL":
         try:
-            r.request("admin/syslog?form=filter", "operation=write&type=ALL&level=ALL")
+            raw_request(r, "admin/syslog?form=filter", "operation=write&type=ALL&level=ALL")
         except Exception:
             pass
 
@@ -766,7 +801,7 @@ def cmd_write(r, label, endpoint, params):
     print(f"\n  Writing to {path} -- {label}")
     print(f"  Payload: {write_data[:300]}...")
     try:
-        result = r.request(path, write_data)
+        result = raw_request(r, path, write_data)
         print(f"  OK: {fmt(result)[:500]}")
     except Exception as e:
         print(f"  Error: {str(e)[:300]}")
@@ -779,7 +814,7 @@ def cmd_reboot(r, label):
         return
     print(f"  Rebooting {label}...")
     try:
-        r.request("admin/system?form=reboot", "operation=write", ignore_response=True)
+        raw_request(r, "admin/system?form=reboot", "operation=write", ignore_response=True)
     except Exception:
         pass
     print("  Reboot command sent.")

@@ -1,6 +1,6 @@
 # tplink-archer-be400-cli
 
-Full CLI + MCP server for the **TP-Link Archer BE400** router — 130 reverse-engineered API endpoints, 36 CLI commands, 8 MCP tools for AI integration.
+Full CLI + MCP server for the **TP-Link Archer BE400** router — 130 reverse-engineered API endpoints, 37 CLI commands, 9 MCP tools for AI integration.
 
 > **BE400-only.** This tool was built by reverse-engineering the Archer BE400's web UI JavaScript bundles (firmware v1.0.4, build 2024-09-04). It may partially work on other TP-Link routers that share the same firmware platform, but full compatibility is only guaranteed for the BE400.
 
@@ -102,6 +102,7 @@ Where `<router>` is a key from your config (e.g. `r1`).
 | `endpoints` | List all 130 known API endpoints |
 | `dump` | Export every readable setting to a JSON file |
 | `monitor` | Continuous network health check (ping + WAN uptime) |
+| `discover` | Scan the LAN for TP-Link admin UIs; optional `--subnet`, `--match-model`, `--no-auth-discovery` |
 
 ### Examples
 
@@ -193,16 +194,17 @@ For **Claude Desktop**, add to your `claude_desktop_config.json`:
 
 Restart your AI client after adding the config. The server reads credentials from the same `~/.config/tplink-be400/config.toml` as the CLI.
 
-### MCP Tools (8 total)
+### MCP Tools (9 total)
 
 | Tool | Description | Writes? |
 |------|-------------|---------|
 | `router_overview` | One-call dashboard: firmware, CPU, memory, WAN, WiFi summary, device count, internet status | No |
 | `list_devices` | All connected clients with hostname, IP, MAC, connection type | No |
-| `get_setting` | Read any topic ("wifi", "wan", "firewall", etc.) or raw endpoint name | No |
+| `get_setting` | Read any topic ("wifi", "wan", "firewall", etc.) or raw endpoint name; optional `router` key (`r1`, `r2`, …) | No |
 | `change_setting` | Write key=value pairs to an endpoint, returns before/after diff | **Yes** |
 | `get_logs` | System logs with optional type filter (NETWORK, FIREWALL, NAT, etc.) | No |
 | `find_endpoints` | Search the 130-endpoint catalog by keyword | No |
+| `discover_routers` | Scan LAN for TP-Link web admin; optional auth to read model (e.g. filter `BE400`) | No |
 | `run_diagnostic` | Ping test + port status + WAN speed in one call | No |
 | `reboot_router` | Reboot with mandatory `confirm: true` safety gate | **Yes** |
 

@@ -1,13 +1,14 @@
 """
 MCP Server for TP-Link Archer BE400 router.
 
-Exposes 8 purpose-built tools over stdio with persistent session
+Exposes nine purpose-built tools over stdio with persistent session
 management and built-in rate limiting to prevent router overload.
 """
 import asyncio
 import json
 import logging
 import platform
+import re
 import subprocess
 import time
 from typing import Annotated
@@ -15,17 +16,25 @@ from typing import Annotated
 from mcp.server.fastmcp import FastMCP
 
 from .config import load_config, CONFIG_FILE
+from .discovery import discover_tplink_routers
 from .endpoints import ENDPOINTS
 
 log = logging.getLogger("tplink-be400")
 
+# Optional router key from ~/.config/tplink-be400/config.toml (e.g. r1, r2)
+RouterKey = Annotated[
+    str | None,
+    "Optional router key from config (e.g. r1, r2). Omit to use the active router (defaults to first entry).",
+]
+
 mcp = FastMCP(
     "tplink-be400",
     instructions=(
-        "TP-Link Archer BE400 router management. Use router_overview for a quick "
-        "dashboard, get_setting for detailed reads, change_setting for writes. "
-        "All 130 API endpoints are accessible. A single persistent session is "
-        "maintained with rate limiting to protect the router."
+        "TP-Link Archer BE400 router management. Use discover_routers to find "
+        "TP-Link units on the LAN (optionally filter by model e.g. BE400). Use "
+        "router_overview for a dashboard; pass router='r2' etc. when multiple "
+        "routers are in config. get_setting / change_setting for reads and writes. "
+        "A persistent session with rate limiting protects the router."
     ),
 )
 
@@ -38,17 +47,32 @@ _session = {
     "host": None,
     "password": None,
     "label": None,
+    "router_key": None,
     "last_request": 0.0,
 }
 
 MIN_REQUEST_GAP = 1.5
 
 
-def _ensure_session():
-    """Lazy-connect using config file credentials. Reuses existing session."""
-    if _session["router"] is not None:
-        return _session["router"]
+def _resolve_router_key(router: str | None) -> str:
+    password, routers = load_config()
+    if not routers:
+        raise RuntimeError(
+            f"No routers configured. Edit {CONFIG_FILE} and add a [routers.r1] section."
+        )
+    if router is not None:
+        if router not in routers:
+            raise ValueError(
+                f"Unknown router '{router}'. Configured keys: {list(routers.keys())}"
+            )
+        return router
+    if _session.get("router_key") and _session["router_key"] in routers:
+        return _session["router_key"]
+    return next(iter(routers))
 
+
+def _ensure_session(router: str | None = None):
+    """Lazy-connect using config file credentials. Reuses session when the same router key is active."""
     password, routers = load_config()
     if not password:
         raise RuntimeError(
@@ -59,16 +83,29 @@ def _ensure_session():
             f"No routers configured. Edit {CONFIG_FILE} and add a [routers.r1] section."
         )
 
-    name = next(iter(routers))
-    host, label = routers[name]
+    key = _resolve_router_key(router)
+    host, label = routers[key]
+
+    if _session["router"] is not None and _session.get("router_key") == key:
+        return _session["router"]
+
+    if _session.get("router"):
+        try:
+            _session["router"].logout()
+        except Exception:
+            pass
+
+    _session["router"] = None
+    _session["router_key"] = key
     _session["host"] = host
     _session["password"] = password
     _session["label"] = label
 
-    from tplinkrouterc6u import TplinkRouter
+    from tplinkrouterc6u import TplinkRouterProvider
 
     log.info("Connecting to %s (%s)", host, label)
-    r = TplinkRouter(host, password)
+    r = TplinkRouterProvider.get_client(host, password)
+    log.info("Auto-detected client: %s", type(r).__name__)
     r.authorize()
     _session["router"] = r
     log.info("Session established")
@@ -97,18 +134,24 @@ async def _rate_limit():
         await asyncio.sleep(wait)
 
 
+def _build_path(path: str, op: str) -> str:
+    """Append operation to URL path (required by newer firmware)."""
+    return f"{path}&operation={op}" if "?" in path else f"{path}?operation={op}"
+
+
 def _request(path: str, op: str):
     """Rate-limited request with auto-reconnect on session expiry."""
     _session["last_request"] = time.monotonic()
     r = _ensure_session()
+    full_path = _build_path(path, op)
     try:
-        return r.request(path, f"operation={op}")
+        return r.request(full_path, f"operation={op}")
     except Exception as first_err:
         log.warning("Request failed (%s %s): %s — reconnecting", path, op, first_err)
         try:
             r = _reconnect()
             _session["last_request"] = time.monotonic()
-            return r.request(path, f"operation={op}")
+            return r.request(full_path, f"operation={op}")
         except Exception:
             raise first_err
 
@@ -117,14 +160,20 @@ def _request_raw(path: str, payload: str):
     """Send a pre-built payload string (used for writes). Auto-reconnects."""
     _session["last_request"] = time.monotonic()
     r = _ensure_session()
+    # Extract operation from payload and append to path for newer firmware
+    op_match = re.search(r"operation=(\w+)", payload)
+    if op_match:
+        full_path = _build_path(path, op_match.group(1))
+    else:
+        full_path = path
     try:
-        return r.request(path, payload)
+        return r.request(full_path, payload)
     except Exception as first_err:
         log.warning("Raw request failed (%s): %s — reconnecting", path, first_err)
         try:
             r = _reconnect()
             _session["last_request"] = time.monotonic()
-            return r.request(path, payload)
+            return r.request(full_path, payload)
         except Exception:
             raise first_err
 
@@ -256,7 +305,7 @@ TOPIC_MAP = {
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-async def router_overview() -> dict:
+async def router_overview(router: RouterKey = None) -> dict:
     """One-call dashboard of the TP-Link Archer BE400 router.
 
     Returns firmware info, CPU/memory usage, WAN status (IP, uptime,
@@ -264,6 +313,7 @@ async def router_overview() -> dict:
     connected device counts, and WiFi SSID summary. Use this as the
     starting point before drilling into specific settings.
     """
+    _ensure_session(router)
     result = {}
 
     fw = await _read("admin/firmware?form=upgrade", "read") or {}
@@ -328,12 +378,13 @@ async def router_overview() -> dict:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-async def list_devices() -> dict:
+async def list_devices(router: RouterKey = None) -> dict:
     """List every device currently connected to the router.
 
     Returns all wired and wireless clients with hostname, IP address,
     MAC address, and connection type (Wired / WiFi band).
     """
+    _ensure_session(router)
     await _rate_limit()
     s = _request("admin/status?form=all", "read")
     devices = []
@@ -369,12 +420,14 @@ async def get_setting(
         "the 130-endpoint catalog (e.g. 'wireless/ofdma', 'nat/dmz') for a "
         "single raw read. Use find_endpoints to discover available endpoints."
     )],
+    router: RouterKey = None,
 ) -> dict:
     """Read router settings by topic or specific endpoint.
 
     High-level topics aggregate multiple endpoints into one response.
     Endpoint shortnames return raw JSON from a single API call.
     """
+    _ensure_session(router)
     if topic in TOPIC_MAP:
         result = {}
         for ep_name in TOPIC_MAP[topic]:
@@ -418,6 +471,7 @@ async def change_setting(
         "{'wan_ping': 'on', 'lan_ping': 'off'}. Keys must match the "
         "field names returned by get_setting for that endpoint."
     )],
+    router: RouterKey = None,
 ) -> dict:
     """Change a router setting. Reads current values, applies your changes,
     writes back, then re-reads to confirm persistence.
@@ -425,6 +479,7 @@ async def change_setting(
     WARNING: This modifies the router configuration. Double-check endpoint
     and field names using get_setting first.
     """
+    _ensure_session(router)
     if endpoint not in ENDPOINTS:
         close = [k for k in ENDPOINTS if endpoint.lower() in k.lower()]
         return {"error": f"Unknown endpoint '{endpoint}'", "did_you_mean": close[:10]}
@@ -503,11 +558,13 @@ async def get_logs(
         "VPN, WIRELESS, USB, MESH, CLOUD, OTHER."
     )] = "ALL",
     max_entries: Annotated[int, "Maximum number of log entries to return. Default 50."] = 50,
+    router: RouterKey = None,
 ) -> dict:
     """Retrieve system logs from the router with optional type filtering.
 
     Returns timestamped log entries with type and severity level.
     """
+    _ensure_session(router)
     if log_type != "ALL":
         await _rate_limit()
         try:
@@ -580,15 +637,43 @@ async def find_endpoints(
 
 
 # ---------------------------------------------------------------------------
-# Tool 7: run_diagnostic
+# Tool 7: discover_routers
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-async def run_diagnostic() -> dict:
+async def discover_routers(
+    subnet: Annotated[str | None, "IPv4 CIDR to scan (e.g. 192.168.0.0/24). Omit to use this host's LAN /24."] = None,
+    match_model: Annotated[str | None, "If set, only return entries whose model contains this substring (e.g. BE400). Requires try_auth."] = None,
+    try_auth: Annotated[bool, "Use [auth] password from config to log in and read model/firmware per candidate."] = True,
+) -> dict:
+    """Scan the LAN for TP-Link web admin UIs and optionally authenticate to identify each unit.
+
+    Finds multiple TP-Link devices (including several BE400s) by HTTP fingerprint, then
+    optionally uses the same admin password as in config to read the exact model string.
+    Add entries under [routers.*] in config only after you know each device's IP.
+    """
+    password, _routers = load_config()
+    pwd = password if try_auth else None
+    return await asyncio.to_thread(
+        discover_tplink_routers,
+        subnet=subnet,
+        password=pwd,
+        match_model_substring=match_model,
+        try_auth=try_auth,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 8: run_diagnostic
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def run_diagnostic(router: RouterKey = None) -> dict:
     """Run a network diagnostic: ping test to 8.8.8.8, physical port
     status, current WAN speed, and WAN uptime. Useful for
     troubleshooting connectivity issues.
     """
+    _ensure_session(router)
     result = {}
 
     try:
@@ -657,7 +742,7 @@ async def run_diagnostic() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 8: reboot_router
+# Tool 9: reboot_router
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -666,6 +751,7 @@ async def reboot_router(
         "MUST be set to true to proceed. The router will go offline for "
         "approximately 60-90 seconds during reboot."
     )],
+    router: RouterKey = None,
 ) -> dict:
     """Reboot the TP-Link Archer BE400 router.
 
@@ -680,9 +766,9 @@ async def reboot_router(
         }
 
     await _rate_limit()
-    r = _ensure_session()
+    r = _ensure_session(router)
     try:
-        r.request("admin/system?form=reboot", "operation=write", ignore_response=True)
+        r.request(_build_path("admin/system?form=reboot", "write"), "operation=write", ignore_response=True)
         log.info("Reboot command sent successfully")
     except Exception as e:
         log.debug("Expected error after reboot command (router going down): %s", e)

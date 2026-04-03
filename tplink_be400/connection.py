@@ -6,10 +6,11 @@ log = logging.getLogger("tplink-be400")
 
 
 def connect(host, password):
-    """Authenticate to the router and return the TplinkRouter session."""
-    from tplinkrouterc6u import TplinkRouter
+    """Authenticate to the router and return an auto-detected session."""
+    from tplinkrouterc6u import TplinkRouterProvider
     log.info("Connecting to %s", host)
-    r = TplinkRouter(host, password)
+    r = TplinkRouterProvider.get_client(host, password)
+    log.info("Auto-detected client: %s", type(r).__name__)
     r.authorize()
     log.info("Authenticated successfully")
     return r
@@ -18,10 +19,23 @@ def connect(host, password):
 def safe_request(r, path, op):
     """Make an API request, returning None on any error."""
     try:
-        return r.request(path, f"operation={op}")
+        full_path = f"{path}&operation={op}" if "?" in path else f"{path}?operation={op}"
+        return r.request(full_path, f"operation={op}")
     except Exception as e:
         log.debug("safe_request failed for %s [%s]: %s", path, op, e)
         return None
+
+
+def raw_request(r, path, payload, **kwargs):
+    """Make a raw request with operation appended to the URL path."""
+    import re as _re
+    op_match = _re.search(r"operation=(\w+)", payload)
+    if op_match:
+        op = op_match.group(1)
+        full_path = f"{path}&operation={op}" if "?" in path else f"{path}?operation={op}"
+    else:
+        full_path = path
+    return r.request(full_path, payload, **kwargs)
 
 
 def fmt(data, indent=2):
