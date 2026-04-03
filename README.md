@@ -1,6 +1,6 @@
 # tplink-archer-be400-cli
 
-Full CLI for the **TP-Link Archer BE400** router — 130 reverse-engineered API endpoints, 36 commands.
+Full CLI + MCP server for the **TP-Link Archer BE400** router — 130 reverse-engineered API endpoints, 36 CLI commands, 8 MCP tools for AI integration.
 
 > **BE400-only.** This tool was built by reverse-engineering the Archer BE400's web UI JavaScript bundles (firmware v1.0.4, build 2024-09-04). It may partially work on other TP-Link routers that share the same firmware platform, but full compatibility is only guaranteed for the BE400.
 
@@ -148,6 +148,92 @@ Guidelines for safe usage:
 
 If the router becomes unresponsive after heavy API usage, wait 60-90 seconds for it to reboot automatically.
 
+## MCP Server (AI Integration)
+
+This package includes an MCP (Model Context Protocol) server that lets AI assistants like Claude and Cursor interact with the router directly through structured tools instead of shell commands.
+
+### Why MCP Instead of Shell
+
+- **Persistent session** — one RSA+AES handshake reused across all calls (no session churn that can crash the router)
+- **Built-in rate limiting** — 1.5s minimum between API calls, enforced automatically
+- **Structured JSON** — every response is clean dicts/lists, not formatted text to parse
+- **Auto-reconnect** — if the session times out, it silently re-authenticates
+
+### MCP Installation
+
+```bash
+pip install git+https://github.com/loliver1823/tplink-archer-be400-cli.git
+```
+
+Then register the server. For **Cursor**, create/edit `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "tplink-be400": {
+      "command": "python",
+      "args": ["-m", "tplink_be400.mcp_server"]
+    }
+  }
+}
+```
+
+For **Claude Desktop**, add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "tplink-be400": {
+      "command": "python",
+      "args": ["-m", "tplink_be400.mcp_server"]
+    }
+  }
+}
+```
+
+Restart your AI client after adding the config. The server reads credentials from the same `~/.config/tplink-be400/config.toml` as the CLI.
+
+### MCP Tools (8 total)
+
+| Tool | Description | Writes? |
+|------|-------------|---------|
+| `router_overview` | One-call dashboard: firmware, CPU, memory, WAN, WiFi summary, device count, internet status | No |
+| `list_devices` | All connected clients with hostname, IP, MAC, connection type | No |
+| `get_setting` | Read any topic ("wifi", "wan", "firewall", etc.) or raw endpoint name | No |
+| `change_setting` | Write key=value pairs to an endpoint, returns before/after diff | **Yes** |
+| `get_logs` | System logs with optional type filter (NETWORK, FIREWALL, NAT, etc.) | No |
+| `find_endpoints` | Search the 130-endpoint catalog by keyword | No |
+| `run_diagnostic` | Ping test + port status + WAN speed in one call | No |
+| `reboot_router` | Reboot with mandatory `confirm: true` safety gate | **Yes** |
+
+### `get_setting` Topics
+
+The `get_setting` tool accepts high-level topic names that aggregate multiple endpoints:
+
+`wifi`, `wan`, `lan`, `dhcp`, `firewall`, `nat`, `qos`, `vpn`, `admin`, `mesh`, `ipv6`, `ddns`, `upnp`, `led`, `eco`, `time`, `firmware`, `disk`, `sharing`, `iptv`, `imb`, `cloud`, `logs`, `ports`, `routes`, `guest`
+
+Or pass any endpoint shortname (e.g. `wireless/ofdma`, `nat/dmz`) for a single raw read. Use `find_endpoints` to search the catalog.
+
+### MCP Examples
+
+```
+# AI calls router_overview → gets full dashboard as JSON
+router_overview()
+→ { firmware: { model: "Archer BE400", version: "1.0.4 ..." }, performance: { cpu_percent: 11.0, memory_percent: 46.0 }, clients: { total: 20 }, wan: { ip: "180.150.x.x", uptime_human: "4h 23m" }, ... }
+
+# AI calls get_setting with topic "wifi" → gets all WiFi config
+get_setting(topic="wifi")
+→ { data: { "wireless/wireless_2g": { ssid: "MyNetwork", channel: "6", ... }, ... } }
+
+# AI calls change_setting → changes a setting with confirmation
+change_setting(endpoint="security/firewall", settings={"wan_ping": "on"})
+→ { success: true, changes: { wan_ping: { before: "off", after: "on" } } }
+
+# AI calls find_endpoints → searches the catalog
+find_endpoints(query="vpn")
+→ { endpoints: [{ name: "openvpn/config", path: "admin/openvpn?form=config", operation: "read" }, ...] }
+```
+
 ## How It Works
 
 This tool communicates with the router's internal web API — the same API that the browser-based admin panel uses. All endpoints were discovered by reverse-engineering the router's JavaScript bundles.
@@ -158,6 +244,7 @@ Authentication uses RSA + AES encryption (handled by the `tplinkrouterc6u` libra
 
 - [tplinkrouterc6u](https://github.com/AlexandrEroworker/TP-Link-Archer-C6U) — TP-Link router API library
 - [pycryptodome](https://github.com/Legrandin/pycryptodome) — RSA/AES encryption
+- [mcp](https://github.com/modelcontextprotocol/python-sdk) — Model Context Protocol SDK (for MCP server)
 
 ## Compatibility
 
