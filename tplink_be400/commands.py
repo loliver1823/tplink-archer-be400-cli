@@ -1,6 +1,5 @@
 """All high-level CLI commands for the TP-Link Archer BE400."""
 import json
-import sys
 import time
 import datetime
 import subprocess
@@ -49,7 +48,10 @@ def cmd_status(r, label):
 
 def cmd_devices(r, label):
     print(f"\n  Connected Devices -- {label}")
-    s = r.request("admin/status?form=all", "operation=read")
+    s = safe_request(r, "admin/status?form=all", "read")
+    if not s:
+        print("    Error: could not reach router")
+        return
     rows = []
     for d in s.get("access_devices_wired", []):
         rows.append((d.get("hostname", "?"), d.get("ipaddr", "?"), d.get("macaddr", "?"), "Wired"))
@@ -123,7 +125,10 @@ def cmd_wifi(r, label):
 
 def cmd_dhcp(r, label):
     print(f"\n  DHCP -- {label}")
-    d = r.request("admin/dhcps?form=setting", "operation=read")
+    d = safe_request(r, "admin/dhcps?form=setting", "read")
+    if not d:
+        print("    Error: could not read DHCP settings")
+        return
     for k, v in sorted(d.items()):
         print(f"    {k}: {v}")
     clients = safe_request(r, "admin/dhcps?form=client", "load")
@@ -140,7 +145,10 @@ def cmd_dhcp(r, label):
 
 def cmd_wan(r, label):
     print(f"\n  WAN Status -- {label}")
-    net = r.request("admin/network?form=status_ipv4", "operation=read")
+    net = safe_request(r, "admin/network?form=status_ipv4", "read")
+    if not net:
+        print("    Error: could not read WAN status")
+        return
     for k, v in sorted(net.items()):
         print(f"    {k}: {v}")
     ws = safe_request(r, "admin/network?form=wan_ipv4_status", "read")
@@ -180,7 +188,10 @@ def cmd_wan(r, label):
 
 def cmd_lan(r, label):
     print(f"\n  LAN Settings -- {label}")
-    lan = r.request("admin/network?form=lan_ipv4", "operation=read")
+    lan = safe_request(r, "admin/network?form=lan_ipv4", "read")
+    if not lan:
+        print("    Error: could not read LAN settings")
+        return
     print(f"    IP Address:  {lan.get('ipaddr')}")
     print(f"    Subnet Mask: {lan.get('mask_type')}")
     print(f"    MAC Address: {lan.get('macaddr')}")
@@ -203,7 +214,10 @@ def cmd_lan(r, label):
 
 def cmd_firewall(r, label):
     print(f"\n  Firewall / Security -- {label}")
-    sec = r.request("admin/security_settings?form=new_enable", "operation=read")
+    sec = safe_request(r, "admin/security_settings?form=new_enable", "read")
+    if not sec:
+        print("    Error: could not read firewall settings")
+        return
     print(f"    SPI Firewall: {sec.get('enable')}")
     print(f"    LAN Ping:     {sec.get('lan_ping')}")
     print(f"    WAN Ping:     {sec.get('wan_ping')}")
@@ -372,7 +386,10 @@ def cmd_guest(r, label):
 
 def cmd_iptv(r, label):
     print(f"\n  IPTV / Port Assignments -- {label}")
-    iptv = r.request("admin/iptv?form=setting", "operation=read")
+    iptv = safe_request(r, "admin/iptv?form=setting", "read")
+    if not iptv:
+        print("    Error: could not read IPTV settings")
+        return
     ports = iptv.get("port_settings", [])
     if isinstance(ports, list):
         rows = [(p.get("name", "?"), p.get("type", "?")) for p in ports]
@@ -483,20 +500,33 @@ def cmd_ports(r, label):
 def cmd_logs(r, label, log_type="ALL"):
     if log_type != "ALL":
         safe_request(r, "admin/syslog?form=filter", "read")
-        r.request("admin/syslog?form=filter", f"operation=write&type={log_type}&level=ALL")
-    logs = r.request("admin/syslog?form=log", "operation=load")
+        try:
+            r.request("admin/syslog?form=filter", f"operation=write&type={log_type}&level=ALL")
+        except Exception as e:
+            print(f"  Warning: could not set log filter: {e}")
+    logs = safe_request(r, "admin/syslog?form=log", "load")
+    if logs is None:
+        print(f"\n  System Logs -- {label} (filter: {log_type})")
+        print("    Error: could not retrieve logs")
+        return
     print(f"\n  System Logs -- {label} (filter: {log_type}, {len(logs)} entries)")
     if isinstance(logs, list):
         for entry in logs:
             if isinstance(entry, dict):
                 print(f"  [{entry.get('time', '')}] [{entry.get('type', '')}] [{entry.get('level', '')}] {entry.get('content', '')}")
     if log_type != "ALL":
-        r.request("admin/syslog?form=filter", "operation=write&type=ALL&level=ALL")
+        try:
+            r.request("admin/syslog?form=filter", "operation=write&type=ALL&level=ALL")
+        except Exception:
+            pass
 
 
 def cmd_time(r, label):
     print(f"\n  Time/NTP -- {label}")
-    t = r.request("admin/time?form=settings", "operation=read")
+    t = safe_request(r, "admin/time?form=settings", "read")
+    if not t:
+        print("    Error: could not read time settings")
+        return
     for k, v in sorted(t.items()):
         print(f"    {k}: {v}")
     dst = safe_request(r, "admin/time?form=dst", "read")
@@ -518,14 +548,20 @@ def cmd_led(r, label):
 
 def cmd_mode(r, label):
     print(f"\n  Operation Mode -- {label}")
-    m = r.request("admin/system?form=sysmode", "operation=read")
+    m = safe_request(r, "admin/system?form=sysmode", "read")
+    if not m:
+        print("    Error: could not read operation mode")
+        return
     for k, v in sorted(m.items()):
         print(f"    {k}: {v}")
 
 
 def cmd_firmware(r, label):
     print(f"\n  Firmware -- {label}")
-    fw = r.request("admin/firmware?form=upgrade", "operation=read")
+    fw = safe_request(r, "admin/firmware?form=upgrade", "read")
+    if not fw:
+        print("    Error: could not read firmware info")
+        return
     for k, v in sorted(fw.items()):
         print(f"    {k}: {v}")
     au = safe_request(r, "admin/firmware?form=auto_upgrade", "read")
@@ -563,7 +599,10 @@ def cmd_vpn(r, label):
 
 def cmd_eco(r, label):
     print(f"\n  Eco Mode -- {label}")
-    eco = r.request("admin/eco_mode?form=settings", "operation=read")
+    eco = safe_request(r, "admin/eco_mode?form=settings", "read")
+    if not eco:
+        print("    Error: could not read eco mode settings")
+        return
     for k, v in sorted(eco.items()):
         print(f"    {k}: {v}")
 
@@ -633,7 +672,10 @@ def cmd_admin(r, label):
 
 def cmd_diag(r, label):
     print(f"\n  Diagnostics -- {label}")
-    d = r.request("admin/diag?form=diag", "operation=read")
+    d = safe_request(r, "admin/diag?form=diag", "read")
+    if not d:
+        print("    Error: could not read diagnostics")
+        return
     for k, v in sorted(d.items()):
         print(f"    {k}: {v}")
 
@@ -689,16 +731,12 @@ def cmd_read(r, label, endpoint):
     else:
         path = endpoint
     for op in ["read", "load"]:
-        try:
-            data = r.request(path, f"operation={op}")
+        data = safe_request(r, path, op)
+        if data is not None:
             print(f"\n  {path} [{op}] -- {label}")
             print(fmt(data))
             return
-        except Exception as e:
-            if "no such callback" not in str(e):
-                print(f"\n  {path} [{op}] -- Error: {str(e)[:200]}")
-                return
-    print(f"  Endpoint not found: {path}")
+    print(f"  Endpoint not found or not responding: {path}")
 
 
 def cmd_write(r, label, endpoint, params):
@@ -708,13 +746,11 @@ def cmd_write(r, label, endpoint, params):
         path = f"admin/{endpoint.replace('/', '?form=')}"
     else:
         path = endpoint
-    try:
-        current = r.request(path, "operation=read")
-    except Exception:
-        try:
-            current = r.request(path, "operation=load")
-        except Exception:
-            current = {}
+    current = safe_request(r, path, "read")
+    if current is None:
+        current = safe_request(r, path, "load")
+    if current is None:
+        current = {}
     if isinstance(current, dict):
         for p in params:
             if "=" in p:
@@ -782,34 +818,51 @@ def cmd_dump(r, label, router_key):
 
 
 def cmd_monitor(r, label, host, password):
+    import platform
     print(f"\n  Monitoring {label} -- Ctrl+C to stop\n")
+    is_windows = platform.system() == "Windows"
     prev_uptime = -1
     check = 0
+    session = r
     while True:
         check += 1
         now = datetime.datetime.now().strftime("%H:%M:%S")
         lost = 0
         times = []
         try:
-            result = subprocess.run(["ping", "-n", "4", "-w", "2000", "8.8.8.8"], capture_output=True, text=True, timeout=12)
+            ping_cmd = (
+                ["ping", "-n", "4", "-w", "2000", "8.8.8.8"]
+                if is_windows
+                else ["ping", "-c", "4", "-W", "2", "8.8.8.8"]
+            )
+            result = subprocess.run(ping_cmd, capture_output=True, text=True, timeout=15)
             for line in result.stdout.split("\n"):
-                if "Request timed out" in line:
+                if "Request timed out" in line or "100% packet loss" in line:
                     lost += 1
                 elif "time=" in line:
-                    t = line.split("time=")[1].split("ms")[0]
-                    times.append(int(t))
+                    for part in line.split():
+                        if part.startswith("time="):
+                            ms_str = part.split("=")[1].rstrip("ms")
+                            try:
+                                times.append(float(ms_str))
+                            except ValueError:
+                                pass
         except Exception:
             lost = 4
         avg = sum(times) / len(times) if times else -1
+        uptime = -1
         try:
-            from tplinkrouterc6u import TplinkRouter as TR
-            rx = TR(host, password)
-            rx.authorize()
-            st = rx.request("admin/network?form=status_ipv4", "operation=read")
+            st = session.request("admin/network?form=status_ipv4", "operation=read")
             uptime = int(st.get("wan_ipv4_uptime", -1))
-            rx.logout()
         except Exception:
-            uptime = -1
+            try:
+                from tplinkrouterc6u import TplinkRouter as TR
+                session = TR(host, password)
+                session.authorize()
+                st = session.request("admin/network?form=status_ipv4", "operation=read")
+                uptime = int(st.get("wan_ipv4_uptime", -1))
+            except Exception:
+                pass
         reboot_marker = ""
         if 0 <= uptime < prev_uptime:
             reboot_marker = " *** WAN RECONNECTED ***"

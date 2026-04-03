@@ -1,12 +1,17 @@
 """Router connection and shared utilities."""
 import json
+import logging
+
+log = logging.getLogger("tplink-be400")
 
 
 def connect(host, password):
     """Authenticate to the router and return the TplinkRouter session."""
     from tplinkrouterc6u import TplinkRouter
+    log.info("Connecting to %s", host)
     r = TplinkRouter(host, password)
     r.authorize()
+    log.info("Authenticated successfully")
     return r
 
 
@@ -14,7 +19,8 @@ def safe_request(r, path, op):
     """Make an API request, returning None on any error."""
     try:
         return r.request(path, f"operation={op}")
-    except Exception:
+    except Exception as e:
+        log.debug("safe_request failed for %s [%s]: %s", path, op, e)
         return None
 
 

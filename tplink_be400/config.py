@@ -1,6 +1,5 @@
 """Config file management for tplink-be400 CLI."""
 import os
-import sys
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "tplink-be400")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.toml")

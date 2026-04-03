@@ -6,6 +6,8 @@ management and built-in rate limiting to prevent router overload.
 """
 import asyncio
 import json
+import logging
+import platform
 import subprocess
 import time
 from typing import Annotated
@@ -14,6 +16,8 @@ from mcp.server.fastmcp import FastMCP
 
 from .config import load_config, CONFIG_FILE
 from .endpoints import ENDPOINTS
+
+log = logging.getLogger("tplink-be400")
 
 mcp = FastMCP(
     "tplink-be400",
@@ -63,9 +67,11 @@ def _ensure_session():
 
     from tplinkrouterc6u import TplinkRouter
 
+    log.info("Connecting to %s (%s)", host, label)
     r = TplinkRouter(host, password)
     r.authorize()
     _session["router"] = r
+    log.info("Session established")
     return r
 
 
@@ -75,9 +81,10 @@ def _reconnect():
     if old:
         try:
             old.logout()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Logout during reconnect failed: %s", e)
     _session["router"] = None
+    log.info("Reconnecting...")
     return _ensure_session()
 
 
@@ -85,19 +92,39 @@ async def _rate_limit():
     """Enforce minimum gap between API calls."""
     elapsed = time.monotonic() - _session["last_request"]
     if elapsed < MIN_REQUEST_GAP:
-        await asyncio.sleep(MIN_REQUEST_GAP - elapsed)
+        wait = MIN_REQUEST_GAP - elapsed
+        log.debug("Rate limit: sleeping %.2fs", wait)
+        await asyncio.sleep(wait)
 
 
 def _request(path: str, op: str):
-    """Rate-limited request with auto-reconnect."""
+    """Rate-limited request with auto-reconnect on session expiry."""
     _session["last_request"] = time.monotonic()
     r = _ensure_session()
     try:
         return r.request(path, f"operation={op}")
     except Exception as first_err:
+        log.warning("Request failed (%s %s): %s — reconnecting", path, op, first_err)
         try:
             r = _reconnect()
+            _session["last_request"] = time.monotonic()
             return r.request(path, f"operation={op}")
+        except Exception:
+            raise first_err
+
+
+def _request_raw(path: str, payload: str):
+    """Send a pre-built payload string (used for writes). Auto-reconnects."""
+    _session["last_request"] = time.monotonic()
+    r = _ensure_session()
+    try:
+        return r.request(path, payload)
+    except Exception as first_err:
+        log.warning("Raw request failed (%s): %s — reconnecting", path, first_err)
+        try:
+            r = _reconnect()
+            _session["last_request"] = time.monotonic()
+            return r.request(path, payload)
         except Exception:
             raise first_err
 
@@ -106,7 +133,8 @@ def _safe(path: str, op: str):
     """Like _request but returns None on failure."""
     try:
         return _request(path, op)
-    except Exception:
+    except Exception as e:
+        log.debug("Safe request returned None for %s [%s]: %s", path, op, e)
         return None
 
 
@@ -403,6 +431,7 @@ async def change_setting(
 
     path, default_op = ENDPOINTS[endpoint]
 
+    # Step 1: Read current state
     before = await _read(path, default_op)
     if before is None:
         before = await _read(path, "load")
@@ -415,6 +444,12 @@ async def change_setting(
             "current_data": before,
         }
 
+    # Validate requested keys exist in the current data
+    unknown_keys = [k for k in settings if k not in before]
+    if unknown_keys:
+        log.warning("Writing unknown keys %s to %s (may be valid)", unknown_keys, endpoint)
+
+    # Step 2: Merge changes into current state and build payload
     merged = dict(before)
     merged.update(settings)
 
@@ -423,28 +458,33 @@ async def change_setting(
         parts.append(f"{k}={json.dumps(v) if isinstance(v, (dict, list)) else v}")
     payload = "&".join(parts)
 
+    # Step 3: Write
     await _rate_limit()
     try:
-        write_result = _request(path, "write")
-    except Exception:
-        pass
-    try:
-        _session["last_request"] = time.monotonic()
-        r = _ensure_session()
-        write_result = r.request(path, payload)
+        _request_raw(path, payload)
     except Exception as e:
+        log.error("Write to %s failed: %s", path, e)
         return {"error": f"Write failed: {str(e)[:300]}", "payload_sent": payload[:500]}
 
+    # Step 4: Re-read to verify persistence
     after = await _read(path, default_op)
 
     changed = {}
     for k, v in settings.items():
         old_val = str(before.get(k, ""))
         new_val = str((after or {}).get(k, ""))
-        changed[k] = {"before": old_val, "after": new_val, "requested": str(v)}
+        persisted = new_val == str(v)
+        changed[k] = {
+            "before": old_val,
+            "after": new_val,
+            "requested": str(v),
+            "persisted": persisted,
+        }
 
+    all_persisted = all(c["persisted"] for c in changed.values())
     return {
         "success": True,
+        "all_persisted": all_persisted,
         "endpoint": endpoint,
         "path": path,
         "changes": changed,
@@ -472,21 +512,19 @@ async def get_logs(
         await _rate_limit()
         try:
             _request("admin/syslog?form=filter", "read")
-            _session["last_request"] = time.monotonic()
-            r = _ensure_session()
-            r.request("admin/syslog?form=filter", f"operation=write&type={log_type}&level=ALL")
-        except Exception:
-            pass
+            await _rate_limit()
+            _request_raw("admin/syslog?form=filter", f"operation=write&type={log_type}&level=ALL")
+        except Exception as e:
+            log.warning("Failed to set log filter to %s: %s", log_type, e)
 
     logs = await _read("admin/syslog?form=log", "load")
 
     if log_type != "ALL":
         await _rate_limit()
         try:
-            r = _ensure_session()
-            r.request("admin/syslog?form=filter", "operation=write&type=ALL&level=ALL")
-        except Exception:
-            pass
+            _request_raw("admin/syslog?form=filter", "operation=write&type=ALL&level=ALL")
+        except Exception as e:
+            log.warning("Failed to reset log filter: %s", e)
 
     entries = []
     if isinstance(logs, list):
@@ -554,18 +592,26 @@ async def run_diagnostic() -> dict:
     result = {}
 
     try:
-        ping = subprocess.run(
-            ["ping", "-n", "4", "-w", "2000", "8.8.8.8"],
-            capture_output=True, text=True, timeout=15,
+        is_windows = platform.system() == "Windows"
+        ping_cmd = (
+            ["ping", "-n", "4", "-w", "2000", "8.8.8.8"]
+            if is_windows
+            else ["ping", "-c", "4", "-W", "2", "8.8.8.8"]
         )
+        ping = subprocess.run(ping_cmd, capture_output=True, text=True, timeout=15)
         lost = 0
         times = []
         for line in ping.stdout.split("\n"):
-            if "Request timed out" in line:
+            if "Request timed out" in line or "100% packet loss" in line:
                 lost += 1
             elif "time=" in line:
-                t = line.split("time=")[1].split("ms")[0]
-                times.append(int(t))
+                for part in line.split():
+                    if part.startswith("time="):
+                        ms_str = part.split("=")[1].rstrip("ms")
+                        try:
+                            times.append(float(ms_str))
+                        except ValueError:
+                            pass
         result["ping"] = {
             "target": "8.8.8.8",
             "packets_sent": 4,
@@ -574,6 +620,7 @@ async def run_diagnostic() -> dict:
             "times_ms": times,
         }
     except Exception as e:
+        log.warning("Ping diagnostic failed: %s", e)
         result["ping"] = {"error": str(e)}
 
     ports = await _read("admin/status?form=router", "read")
@@ -636,8 +683,9 @@ async def reboot_router(
     r = _ensure_session()
     try:
         r.request("admin/system?form=reboot", "operation=write", ignore_response=True)
-    except Exception:
-        pass
+        log.info("Reboot command sent successfully")
+    except Exception as e:
+        log.debug("Expected error after reboot command (router going down): %s", e)
 
     _session["router"] = None
 
@@ -653,6 +701,11 @@ async def reboot_router(
 # ---------------------------------------------------------------------------
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        handlers=[logging.StreamHandler()],
+    )
     mcp.run(transport="stdio")
 
 
