@@ -31,10 +31,10 @@ mcp = FastMCP(
     "tplink-be400",
     instructions=(
         "TP-Link Archer BE400 router management. Use discover_routers to find "
-        "TP-Link units on the LAN (optionally filter by model e.g. BE400). Use "
-        "router_overview for a dashboard; pass router='r2' etc. when multiple "
-        "routers are in config. get_setting / change_setting for reads and writes. "
-        "A persistent session with rate limiting protects the router."
+        "TP-Link units on the LAN (optionally filter by model e.g. BE400); new "
+        "hosts are saved to config unless skip_persist. Use router_overview for a "
+        "dashboard; pass router='r2' when multiple routers are in config. "
+        "get_setting / change_setting for reads and writes. Rate limiting protects the router."
     ),
 )
 
@@ -645,12 +645,13 @@ async def discover_routers(
     subnet: Annotated[str | None, "IPv4 CIDR to scan (e.g. 192.168.0.0/24). Omit to use this host's LAN /24."] = None,
     match_model: Annotated[str | None, "If set, only return entries whose model contains this substring (e.g. BE400). Requires try_auth."] = None,
     try_auth: Annotated[bool, "Use [auth] password from config to log in and read model/firmware per candidate."] = True,
+    skip_persist: Annotated[bool, "If true, do not append new [routers.*] entries to config.toml."] = False,
 ) -> dict:
     """Scan the LAN for TP-Link web admin UIs and optionally authenticate to identify each unit.
 
-    Finds multiple TP-Link devices (including several BE400s) by HTTP fingerprint, then
-    optionally uses the same admin password as in config to read the exact model string.
-    Add entries under [routers.*] in config only after you know each device's IP.
+    By default, newly discovered hosts that authenticate successfully are appended to
+    ~/.config/tplink-be400/config.toml as [routers.rN] (skips host IPs already listed).
+    Set skip_persist=true to only scan and report without writing the config file.
     """
     password, _routers = load_config()
     pwd = password if try_auth else None
@@ -660,6 +661,7 @@ async def discover_routers(
         password=pwd,
         match_model_substring=match_model,
         try_auth=try_auth,
+        persist_to_config=not skip_persist,
     )
 
 

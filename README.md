@@ -102,7 +102,7 @@ Where `<router>` is a key from your config (e.g. `r1`).
 | `endpoints` | List all 130 known API endpoints |
 | `dump` | Export every readable setting to a JSON file |
 | `monitor` | Continuous network health check (ping + WAN uptime) |
-| `discover` | Scan the LAN for TP-Link admin UIs; optional `--subnet`, `--match-model`, `--no-auth-discovery` |
+| `discover` | Scan the LAN for TP-Link admin UIs; optional `--subnet`, `--match-model`, `--no-auth-discovery`, `--skip-persist` (skip writing `config.toml`) |
 
 ### Examples
 
@@ -204,7 +204,7 @@ Restart your AI client after adding the config. The server reads credentials fro
 | `change_setting` | Write key=value pairs to an endpoint, returns before/after diff | **Yes** |
 | `get_logs` | System logs with optional type filter (NETWORK, FIREWALL, NAT, etc.) | No |
 | `find_endpoints` | Search the 130-endpoint catalog by keyword | No |
-| `discover_routers` | Scan LAN for TP-Link web admin; optional auth to read model (e.g. filter `BE400`) | No |
+| `discover_routers` | Scan LAN for TP-Link web admin; optional auth; appends new `[routers.*]` to `~/.config/tplink-be400/config.toml` unless `skip_persist` | **Yes** (local file) |
 | `run_diagnostic` | Ping test + port status + WAN speed in one call | No |
 | `reboot_router` | Reboot with mandatory `confirm: true` safety gate | **Yes** |
 

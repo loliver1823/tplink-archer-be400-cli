@@ -144,6 +144,7 @@ def discover_tplink_routers(
     match_model_substring: str | None = None,
     try_auth: bool = True,
     max_workers: int = 48,
+    persist_to_config: bool = True,
 ) -> dict[str, Any]:
     """
     Scan subnet(s) for TP-Link web admin pages, optionally authenticate and read model.
@@ -199,9 +200,18 @@ def discover_tplink_routers(
         "auth_failed": sum(1 for x in found if try_auth and password and not x.get("auth_ok")),
     }
 
-    return {
+    out: dict[str, Any] = {
         "subnets_scanned": cidrs,
         "hosts_probed": len(hosts),
         "found": found,
         "summary": summary,
     }
+
+    if persist_to_config:
+        from .config import persist_discovered_routers
+
+        out["persist"] = persist_discovered_routers(found)
+    else:
+        out["persist"] = {"persisted": False, "skipped": [], "reason": "skipped (--skip-persist / skip_persist)"}
+
+    return out

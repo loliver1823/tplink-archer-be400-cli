@@ -85,6 +85,7 @@ def main():
     parser.add_argument("--subnet", default=None, help="CIDR for discover (default: auto /24)")
     parser.add_argument("--match-model", default=None, dest="match_model", help="Filter discover by model substring")
     parser.add_argument("--no-auth-discovery", action="store_true", help="Fingerprint only; do not log in per host")
+    parser.add_argument("--skip-persist", action="store_true", dest="skip_persist", help="Do not append discovered routers to config.toml")
     parser.add_argument("positional", nargs="*")
     parsed = parser.parse_args()
 
@@ -101,6 +102,7 @@ def main():
             password=password_cfg,
             match_model=parsed.match_model,
             no_auth=parsed.no_auth_discovery,
+            skip_persist=parsed.skip_persist,
         )
         return
 

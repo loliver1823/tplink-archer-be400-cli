@@ -8,7 +8,7 @@ from .endpoints import ENDPOINTS
 from .connection import safe_request, raw_request, fmt, print_table
 
 
-def cmd_discover(subnet, password, match_model, no_auth):
+def cmd_discover(subnet, password, match_model, no_auth, skip_persist=False):
     """Scan LAN for TP-Link admin pages; optionally identify models via API."""
     from .discovery import discover_tplink_routers
 
@@ -22,6 +22,7 @@ def cmd_discover(subnet, password, match_model, no_auth):
         password=password if try_auth else None,
         match_model_substring=match_model,
         try_auth=try_auth,
+        persist_to_config=not skip_persist,
     )
 
     print(f"\n  Subnets scanned: {', '.join(result['subnets_scanned'])}")
@@ -40,6 +41,22 @@ def cmd_discover(subnet, password, match_model, no_auth):
             print(f"      Auth:      {item['auth_error'][:120]}")
         else:
             print("      (fingerprint only - set password and omit --no-auth-discovery for model)")
+    print()
+
+    pr = result.get("persist") or {}
+    if skip_persist:
+        print("  Config:          (skipped --skip-persist)\n")
+        return
+    if pr.get("added"):
+        print("  Config updated:  new router entries:")
+        for a in pr["added"]:
+            print(f"    - [{a['key']}] {a['host']}  ({a['label']})")
+    elif pr.get("reason"):
+        print(f"  Config:          {pr['reason']}")
+    if pr.get("skipped"):
+        for s in pr["skipped"]:
+            if s.get("reason") == "already in config":
+                print(f"  Skipped (already listed): {s.get('host', s.get('ip'))}")
     print()
 
 
