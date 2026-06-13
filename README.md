@@ -2,7 +2,7 @@
 
 Full CLI + MCP server for the **TP-Link Archer BE400** router — 192 reverse-engineered API endpoints, 37 CLI commands, 14 MCP tools for AI integration (including Avira parental-control domain blocking).
 
-> **BE400-only.** This tool was built by reverse-engineering the Archer BE400's web UI JavaScript bundles (firmware v1.0.4, build 2024-09-04). It may partially work on other TP-Link routers that share the same firmware platform, but full compatibility is only guaranteed for the BE400.
+> **BE400-only.** This tool was built by reverse-engineering the Archer BE400's web UI JavaScript bundles (originally firmware v1.0.4, build 2024-09-04; catalog extended and verified against the 2025 firmware / web-UI bundle v1.11.0). It may partially work on other TP-Link routers that share the same firmware platform, but full compatibility is only guaranteed for the BE400.
 
 ## Installation
 
@@ -217,7 +217,7 @@ Restart your AI client after adding the config. The server reads credentials fro
 
 The `get_setting` tool accepts high-level topic names that aggregate multiple endpoints:
 
-`wifi`, `wan`, `lan`, `dhcp`, `firewall`, `nat`, `qos`, `vpn`, `admin`, `mesh`, `ipv6`, `ddns`, `upnp`, `led`, `eco`, `time`, `firmware`, `disk`, `sharing`, `iptv`, `imb`, `cloud`, `logs`, `ports`, `routes`, `guest`
+`wifi`, `wan`, `lan`, `dhcp`, `firewall`, `parental`, `nat`, `qos`, `vpn`, `admin`, `mesh`, `ipv6`, `ddns`, `upnp`, `led`, `eco`, `time`, `firmware`, `disk`, `sharing`, `iptv`, `imb`, `cloud`, `logs`, `ports`, `routes`, `guest`
 
 Or pass any endpoint shortname (e.g. `wireless/ofdma`, `nat/dmz`) for a single raw read. Use `find_endpoints` to search the catalog.
 
@@ -226,7 +226,7 @@ Or pass any endpoint shortname (e.g. `wireless/ofdma`, `nat/dmz`) for a single r
 ```
 # AI calls router_overview → gets full dashboard as JSON
 router_overview()
-→ { firmware: { model: "Archer BE400", version: "1.0.4 ..." }, performance: { cpu_percent: 11.0, memory_percent: 46.0 }, clients: { total: 20 }, wan: { ip: "180.150.x.x", uptime_human: "4h 23m" }, ... }
+→ { firmware: { model: "Archer BE400", version: "1.1.2 ..." }, performance: { cpu_percent: 11.0, memory_percent: 46.0 }, clients: { total: 20 }, wan: { ip: "180.150.x.x", uptime_human: "4h 23m" }, ... }
 
 # AI calls get_setting with topic "wifi" → gets all WiFi config
 get_setting(topic="wifi")
@@ -241,6 +241,27 @@ find_endpoints(query="vpn")
 → { endpoints: [{ name: "openvpn/config", path: "admin/openvpn?form=config", operation: "read" }, ...] }
 ```
 
+### Parental Controls (Per-Device Domain Blocking)
+
+The BE400's Avira-based parental controls are exposed via the `parental_*` tools. Each "profile" (owner) binds one or more device MACs to a blocked-domain list (up to 64 domains). Blocking is enforced at the gateway via DNS manipulation, so it also drops **HTTPS** connections to those domains while leaving the device's general internet intact. A common use is killing Smart-TV ad/telemetry without touching the rest of the network.
+
+```
+# Block Samsung Smart TV ad/telemetry on one device
+parental_block_domains(
+  name="TV-AdBlock",
+  macs="D0-D0-03-D5-B4-E4",
+  domains="samsungads.com,samsungadhub.com,samsungacr.com",
+)
+→ { success: true, data: { ownerId: 0 } }
+
+# Inspect, edit, or remove later
+parental_profiles()                                          # find the ownerId + current lists
+parental_set_filter(owner_id="0", domains="samsungads.com,extra.com")   # replaces the list
+parental_delete_profile(owner_id="0")                        # removes the block
+```
+
+> Wire format note: parental controls use the `admin/avira_parental_control` endpoint, which takes its operation/params in the URL query and returns a non-standard (bare-blob) response — handled by `avira.py`, not the generic `get_setting`/`change_setting` path.
+
 ## How It Works
 
 This tool communicates with the router's internal web API — the same API that the browser-based admin panel uses. All endpoints were discovered by reverse-engineering the router's JavaScript bundles.
@@ -249,7 +270,7 @@ Authentication uses RSA + AES encryption (handled by the `tplinkrouterc6u` libra
 
 ## Dependencies
 
-- [tplinkrouterc6u](https://github.com/AlexandrEroworker/TP-Link-Archer-C6U) — TP-Link router API library
+- [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U) — TP-Link router API library
 - [pycryptodome](https://github.com/Legrandin/pycryptodome) — RSA/AES encryption
 - [mcp](https://github.com/modelcontextprotocol/python-sdk) — Model Context Protocol SDK (for MCP server)
 
@@ -257,7 +278,7 @@ Authentication uses RSA + AES encryption (handled by the `tplinkrouterc6u` libra
 
 | Router | Firmware | Status |
 |--------|----------|--------|
-| Archer BE400 v1.0 | 1.0.4 Build 20240904 | Fully tested |
+| Archer BE400 v1.0 | 1.0.4 (2024) – v1.11.0 (2025) | Fully tested |
 | Other TP-Link routers | — | May partially work |
 
 ## License

@@ -1,7 +1,9 @@
 """
 All 192 reverse-engineered API endpoints for the TP-Link Archer BE400.
 Discovered by tracing every JavaScript model file in the router's web UI
-firmware v1.0.4 (build 2024-09-04), verified on v1.1.2 (build 2025-10-21).
+firmware v1.0.4 (build 2024-09-04), verified on v1.1.2 (build 2025-10-21),
+and extended in 2025 via a full JS-bundle scan of web-UI v1.11.0 (+59 endpoints,
+incl. the Avira parental-control / VPN / DoH-DoT / EasyMesh modules).
 
 Each entry maps a shortname to (api_path, default_operation).
 """
