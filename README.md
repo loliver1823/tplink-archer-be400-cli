@@ -1,6 +1,6 @@
 # tplink-archer-be400-cli
 
-Full CLI + MCP server for the **TP-Link Archer BE400** router — 130 reverse-engineered API endpoints, 37 CLI commands, 9 MCP tools for AI integration.
+Full CLI + MCP server for the **TP-Link Archer BE400** router — 133 reverse-engineered API endpoints, 37 CLI commands, 14 MCP tools for AI integration (including Avira parental-control domain blocking).
 
 > **BE400-only.** This tool was built by reverse-engineering the Archer BE400's web UI JavaScript bundles (firmware v1.0.4, build 2024-09-04). It may partially work on other TP-Link routers that share the same firmware platform, but full compatibility is only guaranteed for the BE400.
 
@@ -194,7 +194,7 @@ For **Claude Desktop**, add to your `claude_desktop_config.json`:
 
 Restart your AI client after adding the config. The server reads credentials from the same `~/.config/tplink-be400/config.toml` as the CLI.
 
-### MCP Tools (9 total)
+### MCP Tools (14 total)
 
 | Tool | Description | Writes? |
 |------|-------------|---------|
@@ -203,10 +203,15 @@ Restart your AI client after adding the config. The server reads credentials fro
 | `get_setting` | Read any topic ("wifi", "wan", "firewall", etc.) or raw endpoint name; optional `router` key (`r1`, `r2`, …) | No |
 | `change_setting` | Write key=value pairs to an endpoint, returns before/after diff | **Yes** |
 | `get_logs` | System logs with optional type filter (NETWORK, FIREWALL, NAT, etc.) | No |
-| `find_endpoints` | Search the 130-endpoint catalog by keyword | No |
+| `find_endpoints` | Search the 133-endpoint catalog by keyword | No |
 | `discover_routers` | Scan LAN for TP-Link web admin; optional auth; appends new `[routers.*]` to `~/.config/tplink-be400/config.toml` unless `skip_persist` | **Yes** (local file) |
 | `run_diagnostic` | Ping test + port status + WAN speed in one call | No |
 | `reboot_router` | Reboot with mandatory `confirm: true` safety gate | **Yes** |
+| `parental_profiles` | List Avira parental-control profiles (ownerId, bound MACs, blocked-domain lists) and limits | No |
+| `parental_devices` | List devices known to parental controls (name, MAC, type, online) | No |
+| `parental_block_domains` | Create a profile that blocks given domains for device MAC(s) — e.g. Samsung TV ad/telemetry. Keeps general internet (HTTPS blocked too, via gateway DNS) | **Yes** |
+| `parental_set_filter` | Replace the blocked-domain list of an existing profile (`owner_id`, `domains`) | **Yes** |
+| `parental_delete_profile` | Delete a parental-control profile by `owner_id` | **Yes** |
 
 ### `get_setting` Topics
 

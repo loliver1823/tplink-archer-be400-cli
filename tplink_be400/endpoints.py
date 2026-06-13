@@ -1,5 +1,5 @@
 """
-All 130 reverse-engineered API endpoints for the TP-Link Archer BE400.
+All 133 reverse-engineered API endpoints for the TP-Link Archer BE400.
 Discovered by tracing every JavaScript model file in the router's web UI
 firmware v1.0.4 (build 2024-09-04), verified on v1.1.2 (build 2025-10-21).
 
@@ -86,6 +86,20 @@ ENDPOINTS = {
     "security/iot_devices_main":    ("admin/iot_security?form=isolated_devices_main", "load"),
     "security/iot_devices_iot":     ("admin/iot_security?form=isolated_devices_iot", "load"),
     "security/iot_isolated":        ("admin/iot_security?form=isolated_list", "load"),
+
+    # === Parental Controls (basic/legacy module - reads only) ===
+    # NOTE: This admin/parental_control module is the OLD one; its `mode` write
+    # is rejected by fw v1.11. The WORKING per-device domain blocker is the
+    # Avira system (admin/avira_parental_control) - see avira.py + the
+    # parental_* MCP tools. These remain as harmless reads.
+    # Discovered live on fw v1.1.2: module exists with these forms.
+    #   enable -> {"devNum", "host_mac"}  (global on/off + exempt owner device)
+    #   device -> {} / list of controlled-device MACs the rules apply to
+    #   mode   -> {"access_mode":"black|white", "black":"[...]", "white":"[...]"}
+    #             black/white are JSON-encoded string arrays of domains/keywords.
+    "parental/enable":              ("admin/parental_control?form=enable", "read"),
+    "parental/device":             ("admin/parental_control?form=device", "load"),
+    "parental/mode":               ("admin/parental_control?form=mode", "read"),
 
     # === Access Control ===
     "access/enable":                ("admin/access_control?form=enable", "read"),

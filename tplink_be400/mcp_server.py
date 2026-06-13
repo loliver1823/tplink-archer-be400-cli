@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from .config import load_config, CONFIG_FILE
 from .discovery import discover_tplink_routers
 from .endpoints import ENDPOINTS
+from .avira import avira_call, owner_params, as_list
 
 log = logging.getLogger("tplink-be400")
 
@@ -34,7 +35,11 @@ mcp = FastMCP(
         "TP-Link units on the LAN (optionally filter by model e.g. BE400); new "
         "hosts are saved to config unless skip_persist. Use router_overview for a "
         "dashboard; pass router='r2' when multiple routers are in config. "
-        "get_setting / change_setting for reads and writes. Rate limiting protects the router."
+        "get_setting / change_setting for reads and writes. "
+        "Parental controls (Avira): parental_profiles / parental_devices to read, "
+        "parental_block_domains to block domains for a device MAC (e.g. block "
+        "Samsung TV ad/telemetry), parental_set_filter / parental_delete_profile to "
+        "edit/remove. Rate limiting protects the router."
     ),
 )
 
@@ -229,6 +234,9 @@ TOPIC_MAP = {
         "access/enable", "access/mode",
         "access/white_list", "access/black_list",
     ],
+    "parental": [
+        "parental/enable", "parental/device", "parental/mode",
+    ],
     "nat": [
         "nat/setting", "nat/dmz", "nat/alg",
         "nat/virtual_servers", "nat/port_triggering", "nat/clients",
@@ -417,7 +425,7 @@ async def get_setting(
         "'ddns', 'upnp', 'led', 'eco', 'time', 'firmware', 'disk', 'sharing', "
         "'iptv', 'imb', 'cloud', 'logs', 'ports', 'routes', 'guest' to read "
         "multiple related endpoints at once. Or use any endpoint shortname from "
-        "the 130-endpoint catalog (e.g. 'wireless/ofdma', 'nat/dmz') for a "
+        "the 133-endpoint catalog (e.g. 'wireless/ofdma', 'nat/dmz') for a "
         "single raw read. Use find_endpoints to discover available endpoints."
     )],
     router: RouterKey = None,
@@ -613,7 +621,7 @@ async def find_endpoints(
         "Examples: 'firewall', 'wireless', 'vpn', 'ipv6', 'dhcp'."
     )],
 ) -> dict:
-    """Search the 130-endpoint catalog by keyword.
+    """Search the 133-endpoint catalog by keyword.
 
     Returns matching endpoint names, their API paths, and default
     operations. Use the returned shortnames with get_setting or
@@ -782,6 +790,74 @@ async def reboot_router(
         "message": "Reboot command sent. Router will be offline for ~60-90 seconds.",
         "note": "The session has been cleared. Next tool call will reconnect automatically.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Tools 10-14: Parental Controls (Avira) -- per-device domain blocking
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def parental_profiles(router: RouterKey = None) -> dict:
+    """List Avira parental-control "Owner" profiles and limits.
+
+    Each profile binds device MAC(s) to a blocked-domain list. Returns the
+    full ownerList (with ownerId, name, clientList, filterWebsiteList) plus
+    maxima (e.g. filterWebsiteMax). Use this to find a profile's ownerId.
+    """
+    r = _ensure_session(router)
+    await _rate_limit()
+    return avira_call(r, "getOwnerTotalData")
+
+
+@mcp.tool()
+async def parental_devices(router: RouterKey = None) -> dict:
+    """List devices the router knows about for parental controls (name, mac,
+    clientType, online), for choosing which MAC(s) to bind to a profile."""
+    r = _ensure_session(router)
+    await _rate_limit()
+    return avira_call(r, "getDevicesList")
+
+
+@mcp.tool()
+async def parental_block_domains(
+    name: Annotated[str, "Profile name, e.g. 'TV-AdBlock'."],
+    macs: Annotated[str, "Device MAC(s) to bind, UPPER-DASH format (e.g. 'D0-D0-03-D5-B4-E4'); comma-separate multiple."],
+    domains: Annotated[str, "Comma-separated domains to block (<=64 each, <=64 total). Subdomains of a blocked domain are also blocked."],
+    router: RouterKey = None,
+) -> dict:
+    """Create a parental-control profile that blocks `domains` for the given
+    device MAC(s). internetBlocked is false, so the device keeps general
+    internet; only the listed domains are dropped (HTTPS included, via gateway
+    DNS blocking). Returns {success, data:{ownerId}}.
+    """
+    r = _ensure_session(router)
+    await _rate_limit()
+    params = owner_params(name, as_list(macs), as_list(domains))
+    return avira_call(r, "addOwnerInList", params)
+
+
+@mcp.tool()
+async def parental_set_filter(
+    owner_id: Annotated[str, "ownerId of an existing profile (from parental_profiles)."],
+    domains: Annotated[str, "Comma-separated domains; REPLACES the profile's existing block list."],
+    router: RouterKey = None,
+) -> dict:
+    """Replace the blocked-domain list for an existing profile."""
+    r = _ensure_session(router)
+    await _rate_limit()
+    sites = json.dumps(as_list(domains), separators=(",", ":"))
+    return avira_call(r, "setFilterWebsiteInfo", {"ownerId": str(owner_id), "filterWebsiteList": sites})
+
+
+@mcp.tool()
+async def parental_delete_profile(
+    owner_id: Annotated[str, "ownerId of the profile to delete (from parental_profiles)."],
+    router: RouterKey = None,
+) -> dict:
+    """Delete a parental-control profile (removes its blocking)."""
+    r = _ensure_session(router)
+    await _rate_limit()
+    return avira_call(r, "delOwnerInList", {"ownerList": json.dumps([str(owner_id)], separators=(",", ":"))})
 
 
 # ---------------------------------------------------------------------------
