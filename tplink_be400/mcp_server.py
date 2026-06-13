@@ -247,6 +247,8 @@ TOPIC_MAP = {
     "vpn": [
         "openvpn/config", "pptpd/config", "pptpd/accounts",
         "wireguard/config", "wireguard/account",
+        "vpn/enable", "vpn/server", "vpn/user_list",
+        "l2tpoveripsec/config", "vpnconn/config",
     ],
     "admin": [
         "admin/account", "admin/mode", "admin/remote",
@@ -254,6 +256,8 @@ TOPIC_MAP = {
     ],
     "mesh": [
         "easymesh/enable", "easymesh/topo",
+        "easymesh/device_list_all", "easymesh/sclient_list_all",
+        "easymesh/available_devices",
     ],
     "ipv6": [
         "network/lan_ipv6", "network/wan_ipv6_status",
@@ -425,7 +429,7 @@ async def get_setting(
         "'ddns', 'upnp', 'led', 'eco', 'time', 'firmware', 'disk', 'sharing', "
         "'iptv', 'imb', 'cloud', 'logs', 'ports', 'routes', 'guest' to read "
         "multiple related endpoints at once. Or use any endpoint shortname from "
-        "the 133-endpoint catalog (e.g. 'wireless/ofdma', 'nat/dmz') for a "
+        "the 192-endpoint catalog (e.g. 'wireless/ofdma', 'nat/dmz') for a "
         "single raw read. Use find_endpoints to discover available endpoints."
     )],
     router: RouterKey = None,
@@ -621,7 +625,7 @@ async def find_endpoints(
         "Examples: 'firewall', 'wireless', 'vpn', 'ipv6', 'dhcp'."
     )],
 ) -> dict:
-    """Search the 133-endpoint catalog by keyword.
+    """Search the 192-endpoint catalog by keyword.
 
     Returns matching endpoint names, their API paths, and default
     operations. Use the returned shortnames with get_setting or

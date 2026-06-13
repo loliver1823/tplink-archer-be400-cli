@@ -1,6 +1,6 @@
 # tplink-archer-be400-cli
 
-Full CLI + MCP server for the **TP-Link Archer BE400** router — 133 reverse-engineered API endpoints, 37 CLI commands, 14 MCP tools for AI integration (including Avira parental-control domain blocking).
+Full CLI + MCP server for the **TP-Link Archer BE400** router — 192 reverse-engineered API endpoints, 37 CLI commands, 14 MCP tools for AI integration (including Avira parental-control domain blocking).
 
 > **BE400-only.** This tool was built by reverse-engineering the Archer BE400's web UI JavaScript bundles (firmware v1.0.4, build 2024-09-04). It may partially work on other TP-Link routers that share the same firmware platform, but full compatibility is only guaranteed for the BE400.
 
@@ -99,7 +99,7 @@ Where `<router>` is a key from your config (e.g. `r1`).
 | `read <endpoint>` | Read raw data from any endpoint |
 | `write <endpoint> key=value ...` | Write settings to any endpoint |
 | `reboot` | Reboot the router (requires confirmation) |
-| `endpoints` | List all 130 known API endpoints |
+| `endpoints` | List all 192 known API endpoints |
 | `dump` | Export every readable setting to a JSON file |
 | `monitor` | Continuous network health check (ping + WAN uptime) |
 | `discover` | Scan the LAN for TP-Link admin UIs; optional `--subnet`, `--match-model`, `--no-auth-discovery`, `--skip-persist` (skip writing `config.toml`) |
@@ -144,7 +144,7 @@ Guidelines for safe usage:
 - **Single commands are always safe.** Normal CLI usage (one command at a time) will never cause issues.
 - **Scripting**: Add at least a 2-second delay between commands. Avoid running `dump` repeatedly.
 - **Session churn**: Each CLI invocation creates a new authenticated session (RSA key exchange + AES encryption). Running many commands in rapid succession creates heavy CPU load on the router.
-- **The `dump` command** reads all 130 endpoints sequentially and takes ~60 seconds. Don't run it more than once every few minutes.
+- **The `dump` command** reads all 192 endpoints sequentially and takes ~90 seconds. Don't run it more than once every few minutes.
 - **The `monitor` command** uses a 25-second polling interval by design.
 
 If the router becomes unresponsive after heavy API usage, wait 60-90 seconds for it to reboot automatically.
@@ -203,7 +203,7 @@ Restart your AI client after adding the config. The server reads credentials fro
 | `get_setting` | Read any topic ("wifi", "wan", "firewall", etc.) or raw endpoint name; optional `router` key (`r1`, `r2`, …) | No |
 | `change_setting` | Write key=value pairs to an endpoint, returns before/after diff | **Yes** |
 | `get_logs` | System logs with optional type filter (NETWORK, FIREWALL, NAT, etc.) | No |
-| `find_endpoints` | Search the 133-endpoint catalog by keyword | No |
+| `find_endpoints` | Search the 192-endpoint catalog by keyword | No |
 | `discover_routers` | Scan LAN for TP-Link web admin; optional auth; appends new `[routers.*]` to `~/.config/tplink-be400/config.toml` unless `skip_persist` | **Yes** (local file) |
 | `run_diagnostic` | Ping test + port status + WAN speed in one call | No |
 | `reboot_router` | Reboot with mandatory `confirm: true` safety gate | **Yes** |

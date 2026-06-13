@@ -1,2 +1,2 @@
 """TP-Link Archer BE400 — Full API Control via CLI and MCP Server."""
-__version__ = "1.2.0"
+__version__ = "1.3.0"

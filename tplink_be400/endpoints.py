@@ -1,5 +1,5 @@
 """
-All 133 reverse-engineered API endpoints for the TP-Link Archer BE400.
+All 192 reverse-engineered API endpoints for the TP-Link Archer BE400.
 Discovered by tracing every JavaScript model file in the router's web UI
 firmware v1.0.4 (build 2024-09-04), verified on v1.1.2 (build 2025-10-21).
 
@@ -212,4 +212,111 @@ ENDPOINTS = {
     # === Privacy / FFS ===
     "privacy/fing":                 ("admin/privacy_policy?form=fing_auth_state", "read"),
     "ffs/config":                   ("admin/ffs?form=config", "read"),
+
+    # =====================================================================
+    # Completeness pass (fw v1.11): endpoints referenced in the web UI JS
+    # bundles that were absent from the original catalog. Most were
+    # live-validated; default ops are from the JS call sites / validation.
+    # NOTES:
+    #  - The Avira modules (admin/avira_parental_control, admin/avira_network_check)
+    #    return non-standard bare-blob responses and are handled by the
+    #    dedicated parental_* MCP tools / avira.py, so are NOT generic entries.
+    #  - The admin/vpn module forms use per-form custom operations
+    #    (read/file_check/release/cloud_check/insert/...) rather than plain read.
+    #  - A few entries need extra params to return data: vpnconn/config (vpntype),
+    #    easymesh/sclient_detail (mac), disk/contents & folder_sharing/tree (path).
+    #  These remain listed for discovery (find_endpoints); call with the right
+    #  operation/params via change_setting when used.
+    # =====================================================================
+
+    # === VPN (unified module + per-protocol) ===
+    "vpn/enable":                   ("admin/vpn?form=enable", "read"),
+    "vpn/server":                   ("admin/vpn?form=server", "read"),
+    "vpn/ovpn":                     ("admin/vpn?form=ovpn", "read"),
+    "vpn/wireguard":                ("admin/vpn?form=wireguard", "read"),
+    "vpn/thirdvpn":                 ("admin/vpn?form=thirdvpn", "read"),
+    "vpn/user_list":                ("admin/vpn?form=vpn_user_list", "load"),
+    "vpn/user_devices":             ("admin/vpn?form=vpn_user_devices", "load"),
+    "vpnconn/config":               ("admin/vpnconn?form=config", "list"),
+    "l2tpoveripsec/config":         ("admin/l2tpoveripsec?form=config", "read"),
+    "l2tpoveripsec/accounts":       ("admin/l2tpoveripsec?form=accounts", "load"),
+    "openvpn/export":               ("admin/openvpn?form=export", "generate"),
+    "openvpn/cert":                 ("admin/openvpn?form=openvpn_cert", "read"),
+
+    # === DNS filtering / secure DNS ===
+    "yandex_dns/enable":            ("admin/yandex_dns?form=enable", "read"),
+    "network/wan_dohdot":           ("admin/network?form=wan_dohdot", "read"),
+
+    # === Wireless extras ===
+    "wireless/schedule_v2":         ("admin/wireless_schedule_v2?form=settings", "read"),
+    "wireless/wireless":            ("admin/wireless?form=wireless", "read"),
+    "status/wireless_multi_ssid":   ("admin/status?form=status_wireless_multi_ssid", "read"),
+
+    # === USB modem / cellular failover ===
+    "usbmodem/isplist":             ("admin/usbmodem?form=isplist", "read"),
+    "usbmodem/modemset":            ("admin/usbmodem?form=modemset", "read"),
+
+    # === Traffic ===
+    "traffic/dev_name":             ("admin/traffic?form=dev_name", "read"),
+
+    # === EasyMesh network management ===
+    "easymesh/search_slave":        ("admin/easymesh?form=search_slave", "read"),
+    "easymesh/device_list_all":     ("admin/easymesh_network?form=get_mesh_device_list_all", "read"),
+    "easymesh/sclient_list_all":    ("admin/easymesh_network?form=mesh_sclient_list_all", "read"),
+    "easymesh/sclient_detail":      ("admin/easymesh_network?form=mesh_sclient_detail", "read"),
+    "easymesh/ap_avoidance":        ("admin/easymesh_network?form=ap_avoidance_enable_status", "read"),
+    "easymesh/available_devices":   ("admin/easymesh_network?form=available_mesh_device_manage", "load"),
+    "easymesh/change_satellite":    ("admin/easymesh_network?form=change_satellite", "read"),
+
+    # === NAT (IPv6) ===
+    "nat/client_list_v6":           ("admin/nat?form=client_list_v6", "read"),
+    "nat/fr6":                      ("admin/nat?form=fr6", "load"),
+
+    # === Network WAN extras ===
+    "network/wan_autodetect":       ("admin/network?form=wan_autodetect", "read"),
+    "network/wan_pppoe_retrieve":   ("admin/network?form=wan_retrieve_ipv4_pppoe", "read"),
+
+    # === Status extras ===
+    "status/wan_cable_match":       ("admin/status?form=wan_cable_match_stat", "read_match"),
+
+    # === QoS / Smart Network extras ===
+    "qos/update_database":          ("admin/qos?form=update_database", "read"),
+    "smart_network/client_speed_limit": ("admin/smart_network?form=client_speed_limit", "read_max"),
+
+    # === Storage extras ===
+    "disk/contents":                ("admin/disk_setting?form=contents", "load"),
+    "disk/remove":                  ("admin/disk_setting?form=remove", "remove"),
+    "folder_sharing/tree":          ("admin/folder_sharing?form=tree", "load"),
+    "folder_sharing/partial":       ("admin/folder_sharing?form=partial", "read"),
+    "time_machine/contents":        ("admin/time_machine?form=contents", "read"),
+
+    # === Administration extras ===
+    "admin/usersetting":            ("admin/administration?form=usersetting", "read"),
+    "admin/superadmin":             ("admin/administration?form=superadminconfig", "read"),
+    "admin/agileconfig":            ("admin/administration?form=agileconfig", "read"),
+
+    # === Cloud account (actions / status) ===
+    "cloud/get_token":              ("admin/cloud_account?form=get_token", "read"),
+    "cloud/check_internet":         ("admin/cloud_account?form=check_internet", "read"),
+    "cloud/check_device":           ("admin/cloud_account?form=check_device", "read"),
+    "cloud/check_upgrade":          ("admin/cloud_account?form=check_upgrade", "read"),
+    "cloud/detect_upgrade":         ("admin/cloud_account?form=detect_upgrade_status", "read"),
+    "cloud/auto_update_remind":     ("admin/cloud_account?form=auto_update_remind", "read"),
+    "cloud/user_login":             ("admin/cloud_account?form=user_login", "read"),
+    "cloud/unbind":                 ("admin/cloud_account?form=cloud_unbind", "read"),
+
+    # === Firmware extras (incl. mesh slave) ===
+    "firmware/save_upgrade":        ("admin/firmware?form=save_upgrade", "read"),
+    "firmware/config_multipart":    ("admin/firmware?form=config_multipart", "read"),
+    "firmware/slave_cmd":           ("admin/firmware?form=slave_cmd", "read"),
+
+    # === Quick setup extras ===
+    "quick_setup/ap_setup":         ("admin/quick_setup?form=ap_setup", "read"),
+    "quick_setup/re_setup":         ("admin/quick_setup?form=re_setup", "read"),
+    "quick_setup/check_router":     ("admin/quick_setup?form=check_router", "read"),
+
+    # === Misc ===
+    "syslog/save_log":              ("admin/syslog?form=save_log", "read"),
+    "system/logout":                ("admin/system?form=logout", "read"),
+    "time/hour24":                  ("admin/time?form=hour24", "read"),
 }
