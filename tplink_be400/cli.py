@@ -156,6 +156,7 @@ def main():
             "firewall": lambda: commands.cmd_firewall(r, label),
             "security": lambda: commands.cmd_firewall(r, label),
             "access": lambda: commands.cmd_access(r, label),
+            "parental": lambda: commands.cmd_parental(r, label, args),
             "nat": lambda: commands.cmd_nat(r, label),
             "qos": lambda: commands.cmd_qos(r, label),
             "ddns": lambda: commands.cmd_ddns(r, label),

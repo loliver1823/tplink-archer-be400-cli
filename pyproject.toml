@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tplink-archer-be400-cli"
-version = "1.3.0"
+version = "1.4.0"
 description = "Full CLI and MCP server for TP-Link Archer BE400 routers — 192 reverse-engineered API endpoints, 36 commands, Avira parental-control domain blocking, AI-ready via Model Context Protocol"
 readme = "README.md"
 license = {text = "MIT"}

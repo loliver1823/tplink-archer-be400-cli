@@ -66,6 +66,7 @@ Where `<router>` is a key from your config (e.g. `r1`).
 | `lan` | LAN IP, subnet, link aggregation, flow control |
 | `firewall` | SPI firewall, IoT security, access control overview |
 | `access` | Access control details (whitelist/blacklist) |
+| `parental` | Parental controls / per-device domain blocking (Avira): `parental [list \| devices \| block \| setfilter \| delete]` |
 | `nat` | NAT boost, virtual servers, port triggering, DMZ, ALG |
 | `qos` | QoS bandwidth control, device priority list, game accelerator |
 | `ddns` | Dynamic DNS (TP-Link, DynDNS, No-IP) |
@@ -124,6 +125,10 @@ tplink-be400 r1 write security/firewall wan_ping=on
 
 # Set up DMZ host
 tplink-be400 r1 write nat/dmz enable=on ipaddr=192.168.0.100
+
+# Parental controls: block Smart-TV ad/telemetry domains on one device
+tplink-be400 r1 parental block TV-AdBlock D0-D0-03-D5-B4-E4 samsungads.com,samsungacr.com
+tplink-be400 r1 parental            # list profiles
 
 # Read a raw endpoint
 tplink-be400 r1 read wireless/statistics

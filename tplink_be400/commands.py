@@ -6,6 +6,7 @@ import subprocess
 
 from .endpoints import ENDPOINTS
 from .connection import safe_request, raw_request, fmt, print_table
+from .avira import avira_call, owner_params, as_list
 
 
 def cmd_discover(subnet, password, match_model, no_auth, skip_persist=False):
@@ -773,6 +774,75 @@ def cmd_routes(r, label):
         print(f"\n  Static Routes ({len(static)}):")
         rows = [(rt.get("dest", "?"), rt.get("mask", "?"), rt.get("gateway", "?"), rt.get("interface", "?"), rt.get("enable", "?")) for rt in static]
         print_table(rows, ["Destination", "Mask", "Gateway", "Interface", "Enabled"])
+
+
+def cmd_parental(r, label, args):
+    """Avira parental controls -- per-device domain blocking.
+
+    Subcommands:
+      parental                                   list profiles
+      parental devices                           list known devices + MACs
+      parental block <name> <mac,..> <domain,..> create a blocking profile
+      parental setfilter <ownerId> <domain,..>   replace a profile's block list
+      parental delete <ownerId>                  remove a profile
+    """
+    sub = args[0] if args else "list"
+
+    if sub in ("list", "profiles"):
+        res = avira_call(r, "getOwnerTotalData")
+        data = res.get("data", {}) if isinstance(res, dict) else {}
+        owners = data.get("ownerList") or {}
+        print(f"\n  Parental Controls -- {label}")
+        print(f"    limits: up to {data.get('totalOwnerMax', '?')} profiles, "
+              f"{data.get('filterWebsiteMax', '?')} blocked domains each")
+        if isinstance(owners, list) and owners:
+            for o in owners:
+                macs = ", ".join(c.get("mac", "?") for c in o.get("clientList", []))
+                sites = o.get("filterWebsiteList") or []
+                print(f"\n  [ownerId {o.get('ownerId')}] {o.get('name')}")
+                print(f"    devices: {macs or '(none)'}")
+                print(f"    internetBlocked: {o.get('internetBlocked')}")
+                print(f"    blocked domains ({len(sites)}): {', '.join(sites) if sites else '(none)'}")
+        else:
+            print("    (no profiles)")
+        return
+
+    if sub == "devices":
+        res = avira_call(r, "getDevicesList")
+        clients = (res.get("data", {}) or {}).get("clientList", []) if isinstance(res, dict) else []
+        print(f"\n  Parental-control devices -- {label} ({len(clients)})")
+        for c in clients:
+            print(f"    {c.get('mac', '?'):20} {c.get('name', '?'):24} "
+                  f"{c.get('clientType', '?'):12} {'online' if c.get('online') else 'offline'}")
+        return
+
+    if sub == "block":
+        if len(args) < 4:
+            print("  Usage: parental block <name> <mac1,mac2> <domain1,domain2>")
+            return
+        params = owner_params(args[1], as_list(args[2]), as_list(args[3]))
+        print(f"  {fmt(avira_call(r, 'addOwnerInList', params))}")
+        return
+
+    if sub == "setfilter":
+        if len(args) < 3:
+            print("  Usage: parental setfilter <ownerId> <domain1,domain2>")
+            return
+        sites = json.dumps(as_list(args[2]), separators=(",", ":"))
+        print(f"  {fmt(avira_call(r, 'setFilterWebsiteInfo', {'ownerId': str(args[1]), 'filterWebsiteList': sites}))}")
+        return
+
+    if sub == "delete":
+        if len(args) < 2:
+            print("  Usage: parental delete <ownerId>")
+            return
+        owner_list = json.dumps([str(args[1])], separators=(",", ":"))
+        print(f"  {fmt(avira_call(r, 'delOwnerInList', {'ownerList': owner_list}))}")
+        return
+
+    print(f"  Unknown subcommand: {sub}")
+    print("  Usage: parental [list | devices | block <name> <macs> <domains> "
+          "| setfilter <ownerId> <domains> | delete <ownerId>]")
 
 
 def cmd_read(r, label, endpoint):
